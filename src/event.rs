@@ -1,5 +1,5 @@
 use std::io;
-use std::sync::{atomic::Ordering, mpsc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 

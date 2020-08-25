@@ -1,4 +1,4 @@
-use crate::todo::List;
+use crate::todo::{Item, List};
 
 use std::io::Error as IOErr;
 use tui::widgets::{Table, TableState};
@@ -10,8 +10,8 @@ pub struct TodoListTable {
 
 impl TodoListTable {
     pub fn new() -> Result<TodoListTable, IOErr> {
-        const path: &str = "/data/syncthing/todo/main.todo.txt";
-        let l = List::new(String::from(path))?;
+        const PATH: &str = "/data/syncthing/todo/main.todo.txt";
+        let l = List::new(String::from(PATH))?;
 
         Ok(Self {
             state: TableState::default(),
@@ -45,5 +45,12 @@ impl TodoListTable {
             None => 0,
         };
         self.state.select(Some(i));
+    }
+
+    pub fn get_item(&self) -> Option<Item> {
+        match self.state.selected() {
+            Some(i) => Some(Item::new(&self.list.raw_items[i])),
+            None => None,
+        }
     }
 }
