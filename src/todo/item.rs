@@ -124,8 +124,8 @@ impl<'a> Item<'a> {
 
         // TODO: finish implementing
         match chars[0] {
-            '@' => self.contexts.push(word.trim_start_matches("@")),
-            '+' => self.tags.push(word.trim_start_matches("+")),
+            '@' => self.contexts.push(word.strip_prefix("@").expect("couldn't trip @ symbol")),
+            '+' => self.tags.push(word.strip_prefix("+").expect("couldn't trip + symbol")),
             _ => {
                 let things: Vec<&str> = word.splitn(2, ":").collect();
                 if things.len() != 2 {

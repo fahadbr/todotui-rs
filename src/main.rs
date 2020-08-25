@@ -41,7 +41,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
                 .split(f.size());
 
             {
@@ -51,7 +51,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 let rows = row_data
                     .iter()
                     .map(|i| Row::StyledData(i.iter(), normal_style));
-                let attr_table = Table::new(["contexts", "tags", "priority"].iter(), rows)
+                let attr_table = Table::new(["Contexts", "Tags", "Priority"].iter(), rows)
                     .block(Block::default().borders(Borders::ALL).title("Attributes"))
                     .highlight_style(selected_style)
                     .widths(&[Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(34)]);
