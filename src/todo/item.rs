@@ -2,8 +2,9 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
-pub struct Item<'a> {
+pub struct ParsedItem<'a> {
     pub raw: &'a str,
+    pub body: &'a str,
     pub complete: bool,
     pub start_date: Option<&'a str>,
     pub completion_date: Option<&'a str>,
@@ -17,7 +18,7 @@ pub struct Item<'a> {
     pub extensions: Vec<(&'a str, &'a str)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Parse {
     CompletionDate,
     Priority,
@@ -37,13 +38,14 @@ impl Display for Parse {
     }
 }
 
-impl<'a> Item<'a> {
+impl<'a> ParsedItem<'a> {
     pub fn new(raw: &'a str) -> Self {
         let x: &[char] = &['\n', '\r'];
         let mut raw = raw.trim_end_matches(x);
 
         let mut item = Self {
             raw,
+            body: "",
             complete: false,
             start_date: None,
             completion_date: None,
@@ -57,10 +59,12 @@ impl<'a> Item<'a> {
             extensions: Vec::new(),
         };
 
+
         if raw.starts_with('x') {
             raw = raw.trim_start_matches('x').trim_start();
             item.complete = true;
         }
+
 
         let mut parse_state = if item.complete {
             Parse::CompletionDate
@@ -68,7 +72,15 @@ impl<'a> Item<'a> {
             Parse::Priority
         };
 
+
+        let mut body_start_idx = 0;
         for word in raw.split_whitespace() {
+            if item.body == "" && parse_state == Parse::Body {
+                item.body = &raw[body_start_idx..];
+            } else {
+                body_start_idx += word.len() + 1;
+            }
+
             item.process_word(&mut parse_state, word);
         }
 
@@ -138,8 +150,8 @@ impl<'a> Item<'a> {
                 let key = things[0];
                 let val = things[1];
                 match key {
-                    "due" if Item::is_date(val) => self.due_date = Some(val),
-                    "t" if Item::is_date(val) => self.threshold_date = Some(val),
+                    "due" if ParsedItem::is_date(val) => self.due_date = Some(val),
+                    "t" if ParsedItem::is_date(val) => self.threshold_date = Some(val),
                     "h" if val == "1" => self.hidden = true,
                     "rec" => self.recurrance = Some(val),
                     _ => self.extensions.push((key, val)),
@@ -153,14 +165,14 @@ impl<'a> Item<'a> {
             match parse_state {
                 Parse::CompletionDate => {
                     *parse_state = Parse::Priority;
-                    if Item::is_date(word) {
+                    if ParsedItem::is_date(word) {
                         self.completion_date = Some(word);
                         return;
                     }
                 }
                 Parse::Priority => {
                     *parse_state = Parse::StartDate;
-                    match Item::is_priority(word) {
+                    match ParsedItem::is_priority(word) {
                         Ok(priority) => {
                             self.priority = priority;
                             return;
@@ -170,7 +182,7 @@ impl<'a> Item<'a> {
                 }
                 Parse::StartDate => {
                     *parse_state = Parse::Body;
-                    if Item::is_date(word) {
+                    if ParsedItem::is_date(word) {
                         self.start_date = Some(word);
                         return;
                     }

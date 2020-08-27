@@ -1,40 +1,51 @@
-use super::item::Item;
+use super::item::ParsedItem;
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::BufReader;
+use std::{collections::BTreeSet, io::BufReader};
 
 pub struct List {
     path: String,
     pub raw_items: Vec<String>,
+    pub contexts: BTreeSet<String>,
+    pub tags: BTreeSet<String>,
 }
 
 impl List {
     pub fn new(path: String) -> Result<List, std::io::Error> {
         let file = File::open(&path)?;
-        let mut buf_reader = BufReader::new(file);
+        let buf_reader = BufReader::new(file);
 
         let mut items = Vec::new();
+        let mut contexts = BTreeSet::new();
+        let mut tags = BTreeSet::new();
 
-        loop {
-            let mut line = String::new();
-            match buf_reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => items.push(line),
+        for line_res in buf_reader.lines() {
+            match line_res {
+                Ok(line) => {
+                    items.push(line);
+                }
                 Err(e) => return Err(e),
             }
         }
 
-        Ok(
-            List{
-                path,
-                raw_items: items,
+        for line in items.iter() {
+            let i = ParsedItem::new(&line[..]);
+            for c in i.contexts.into_iter() {
+                contexts.insert(c);
             }
-        )
-    }
-}
+            for t in i.tags.into_iter() {
+                tags.insert(t);
+            }
+        }
 
-fn print_line(line: String) {
-    let i = Item::new(&line[..]);
-    println!(">: {:?}", i);
+        let list = List {
+            path,
+            contexts: contexts.into_iter().map(|i| String::from(i)).collect(),
+            tags: tags.into_iter().map(|i| String::from(i)).collect(),
+            raw_items: items,
+        };
+
+        Ok(list)
+    }
 }

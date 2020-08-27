@@ -4,17 +4,17 @@ mod todo;
 
 use event::{Event, Events};
 use std::error::Error;
-use std::iter;
-use todo::Item;
+use todo::ParsedItem;
 
-use table::TodoListTable;
+use table::StatefulTodoList;
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
-    backend::TermionBackend,
-    layout::{Constraint, Direction, Layout},
+    backend::{Backend, TermionBackend},
+    layout::{Constraint::Percentage, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Row, Table},
-    Terminal,
+    text::{Span, Spans},
+    widgets::{Block, Borders, List, ListItem},
+    Frame, Terminal,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +30,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let events = Events::new();
-    let mut tlt = TodoListTable::new()?;
+    let mut stlist = StatefulTodoList::new()?;
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
@@ -39,49 +39,98 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     loop {
         terminal.draw(|f| {
             let chunks = Layout::default()
-                .direction(Direction::Vertical)
+                .direction(Direction::Horizontal)
                 .margin(1)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .constraints([Percentage(80), Percentage(20)].as_ref())
                 .split(f.size());
 
-            {
-                let empty_item = Item::new("");
-                let item = tlt.get_item().unwrap_or(empty_item);
-                let row_data = item.to_row_data();
-                let rows = row_data
-                    .iter()
-                    .map(|i| Row::StyledData(i.iter(), normal_style));
-                let attr_table = Table::new(["Contexts", "Tags", "Priority"].iter(), rows)
-                    .block(Block::default().borders(Borders::ALL).title("Attributes"))
-                    .highlight_style(selected_style)
-                    .widths(&[Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(34)]);
-                f.render_widget(attr_table, chunks[0]);
-            }
-            let header = ["Header1"];
-            let rows = tlt
+            let attr_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Percentage(50), Percentage(50)].as_ref())
+                .split(chunks[1]);
+
+            draw_attributes(f, &stlist, normal_style, selected_style, attr_chunks);
+
+            let list_items: Vec<ListItem> = stlist
                 .list
                 .raw_items
                 .iter()
-                .map(|i| Row::StyledData(iter::once(i), normal_style));
+                .map(|i| {
+                    let parsed_item = ParsedItem::new(&i[..]);
+                    let sub_text = parsed_item.start_date.unwrap_or("");
+                    let lines = vec![
+                        Spans::from(Span::styled(
+                            parsed_item.body,
+                            Style::default().fg(Color::White).add_modifier(
+                                if parsed_item.complete {
+                                    Modifier::CROSSED_OUT
+                                } else {
+                                    Modifier::BOLD
+                                },
+                            ),
+                        )),
+                        Spans::from(Span::styled(sub_text, Style::default().fg(Color::DarkGray))),
+                    ];
 
-            let main_table = Table::new(header.iter(), rows)
+                    ListItem::new(lines)
+                })
+                .collect();
+
+            let list = List::new(list_items)
                 .block(Block::default().borders(Borders::ALL).title("Tasks"))
                 .highlight_style(selected_style)
-                .highlight_symbol("*")
-                .widths(&[Constraint::Percentage(100)]);
-            f.render_stateful_widget(main_table, chunks[1], &mut tlt.state);
+                .highlight_symbol("*");
+
+            f.render_stateful_widget(list, chunks[0], &mut stlist.state);
         })?;
 
-        if let Event::Input(key) = events.next()? {
-            match key {
+        match events.next()? {
+            Event::Input(key) => match key {
                 Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break,
-                Key::Char('j') => tlt.next(),
-                Key::Char('k') => tlt.previous(),
+                Key::Char('j') => stlist.next(),
+                Key::Char('k') => stlist.previous(),
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
-            }
+            },
+            Event::Tick => continue,
         }
     }
 
     Ok(())
+}
+
+fn draw_attributes<B: Backend>(
+    f: &mut Frame<'_, B>,
+    tlt: &StatefulTodoList,
+    normal_style: Style,
+    selected_style: Style,
+    chunks: Vec<Rect>,
+) {
+    {
+        let list_items: Vec<ListItem> = tlt
+            .list
+            .contexts
+            .iter()
+            .map(|i| ListItem::new(Span::raw(i)))
+            .collect();
+
+        let list = List::new(list_items)
+            .block(Block::default().borders(Borders::ALL).title("Contexts"))
+            .highlight_style(selected_style);
+        f.render_widget(list, chunks[0]);
+    }
+
+    {
+        let list_items: Vec<ListItem> = tlt
+            .list
+            .tags
+            .iter()
+            .map(|i| ListItem::new(Span::raw(i)))
+            .collect();
+
+        let list = List::new(list_items)
+            .block(Block::default().borders(Borders::ALL).title("Tags"))
+            .highlight_style(selected_style);
+        f.render_widget(list, chunks[1]);
+    }
 }

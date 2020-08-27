@@ -1,20 +1,20 @@
-use crate::todo::{Item, List};
+use crate::todo::{ParsedItem, List};
 
 use std::io::Error as IOErr;
-use tui::widgets::{Table, TableState};
+use tui::widgets::{ListState};
 
-pub struct TodoListTable {
-    pub state: TableState,
+pub struct StatefulTodoList {
+    pub state: ListState,
     pub list: List,
 }
 
-impl TodoListTable {
-    pub fn new() -> Result<TodoListTable, IOErr> {
+impl StatefulTodoList {
+    pub fn new() -> Result<StatefulTodoList, IOErr> {
         const PATH: &str = "/data/syncthing/todo/main.todo.txt";
         let l = List::new(String::from(PATH))?;
 
         Ok(Self {
-            state: TableState::default(),
+            state: ListState::default(),
             list: l,
         })
     }
@@ -47,9 +47,9 @@ impl TodoListTable {
         self.state.select(Some(i));
     }
 
-    pub fn get_item(&self) -> Option<Item> {
+    pub fn get_item(&self) -> Option<ParsedItem> {
         match self.state.selected() {
-            Some(i) => Some(Item::new(&self.list.raw_items[i])),
+            Some(i) => Some(ParsedItem::new(&self.list.raw_items[i])),
             None => None,
         }
     }
