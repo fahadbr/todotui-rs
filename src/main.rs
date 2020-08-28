@@ -1,12 +1,12 @@
+mod app;
 mod event;
-mod table;
 mod todo;
 
 use event::{Event, Events};
 use std::error::Error;
 use todo::ParsedItem;
 
-use table::StatefulTodoList;
+use app::{ActiveList, App};
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
     backend::{Backend, TermionBackend},
@@ -30,11 +30,10 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let events = Events::new();
-    let mut stlist = StatefulTodoList::new()?;
+    let mut app = App::new()?;
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
-    let normal_style = Style::default().fg(Color::White);
 
     loop {
         terminal.draw(|f| {
@@ -49,9 +48,9 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 .constraints([Percentage(50), Percentage(50)].as_ref())
                 .split(chunks[1]);
 
-            draw_attributes(f, &stlist, normal_style, selected_style, attr_chunks);
+            draw_attributes(f, &mut app, selected_style, attr_chunks);
 
-            let list_items: Vec<ListItem> = stlist
+            let list_items: Vec<ListItem> = app
                 .list
                 .raw_items
                 .iter()
@@ -77,18 +76,25 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 .collect();
 
             let list = List::new(list_items)
-                .block(Block::default().borders(Borders::ALL).title("Tasks"))
+                .block(
+                    Block::default()
+                        .border_style(app.get_style(ActiveList::Tasks))
+                        .borders(Borders::ALL)
+                        .title("Tasks"),
+                )
                 .highlight_style(selected_style)
                 .highlight_symbol("*");
 
-            f.render_stateful_widget(list, chunks[0], &mut stlist.state);
+            f.render_stateful_widget(list, chunks[0], &mut app.task_state);
         })?;
 
         match events.next()? {
             Event::Input(key) => match key {
                 Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break,
-                Key::Char('j') => stlist.next(),
-                Key::Char('k') => stlist.previous(),
+                Key::Char('j') => app.next(),
+                Key::Char('k') => app.previous(),
+                Key::Char('l') => app.move_right(),
+                Key::Char('h') => app.move_left(),
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
@@ -101,13 +107,12 @@ fn start_term() -> Result<(), Box<dyn Error>> {
 
 fn draw_attributes<B: Backend>(
     f: &mut Frame<'_, B>,
-    tlt: &StatefulTodoList,
-    normal_style: Style,
+    app: &mut App,
     selected_style: Style,
     chunks: Vec<Rect>,
 ) {
     {
-        let list_items: Vec<ListItem> = tlt
+        let list_items: Vec<ListItem> = app
             .list
             .contexts
             .iter()
@@ -115,13 +120,19 @@ fn draw_attributes<B: Backend>(
             .collect();
 
         let list = List::new(list_items)
-            .block(Block::default().borders(Borders::ALL).title("Contexts"))
+            .block(
+                Block::default()
+                    .border_style(app.get_style(ActiveList::Contexts))
+                    .borders(Borders::ALL)
+                    .title("Contexts"),
+            )
+            .highlight_symbol("*")
             .highlight_style(selected_style);
-        f.render_widget(list, chunks[0]);
+        f.render_stateful_widget(list, chunks[0], &mut app.context_state);
     }
 
     {
-        let list_items: Vec<ListItem> = tlt
+        let list_items: Vec<ListItem> = app
             .list
             .tags
             .iter()
@@ -129,8 +140,14 @@ fn draw_attributes<B: Backend>(
             .collect();
 
         let list = List::new(list_items)
-            .block(Block::default().borders(Borders::ALL).title("Tags"))
+            .block(
+                Block::default()
+                    .border_style(app.get_style(ActiveList::Tags))
+                    .borders(Borders::ALL)
+                    .title("Tags"),
+            )
+            .highlight_symbol("*")
             .highlight_style(selected_style);
-        f.render_widget(list, chunks[1]);
+        f.render_stateful_widget(list, chunks[1], &mut app.tag_state);
     }
 }

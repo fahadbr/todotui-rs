@@ -2,17 +2,17 @@ use super::item::ParsedItem;
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::{collections::BTreeSet, io::BufReader};
+use std::{collections::BTreeSet, io::BufReader, path::PathBuf};
 
 pub struct List {
-    path: String,
+    path: PathBuf,
     pub raw_items: Vec<String>,
     pub contexts: BTreeSet<String>,
     pub tags: BTreeSet<String>,
 }
 
 impl List {
-    pub fn new(path: String) -> Result<List, std::io::Error> {
+    pub fn new(path: PathBuf) -> Result<List, std::io::Error> {
         let file = File::open(&path)?;
         let buf_reader = BufReader::new(file);
 
