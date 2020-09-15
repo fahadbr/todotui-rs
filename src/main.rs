@@ -1,6 +1,7 @@
 mod app;
 mod event;
 mod todo;
+mod flags;
 
 use event::{Event, Events};
 use std::error::Error;
@@ -18,6 +19,7 @@ use tui::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
+    flags::parse();
     //read_file()
     start_term()
 }
