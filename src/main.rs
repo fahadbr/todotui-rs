@@ -1,13 +1,14 @@
 mod app;
 mod event;
-mod todo;
 mod flags;
+mod state;
+mod todo;
 
 use event::{Event, Events};
-use std::error::Error;
+use std::{collections::HashSet, error::Error};
 use todo::ParsedItem;
 
-use app::{ActiveList, App};
+use state::{ActiveList, State};
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
     backend::{Backend, TermionBackend},
@@ -32,7 +33,8 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let events = Events::new();
-    let mut app = App::new()?;
+    let mut filters = HashSet::new();
+    let mut app = State::new()?;
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
@@ -52,30 +54,34 @@ fn start_term() -> Result<(), Box<dyn Error>> {
 
             draw_attributes(f, &mut app, selected_style, attr_chunks);
 
-            let list_items: Vec<ListItem> = app
-                .list
-                .raw_items
-                .iter()
-                .map(|i| {
-                    let parsed_item = ParsedItem::new(&i[..]);
-                    let sub_text = parsed_item.start_date.unwrap_or("");
-                    let lines = vec![
-                        Spans::from(Span::styled(
-                            parsed_item.body,
-                            Style::default().fg(Color::White).add_modifier(
-                                if parsed_item.complete {
-                                    Modifier::CROSSED_OUT
-                                } else {
-                                    Modifier::BOLD
-                                },
-                            ),
-                        )),
-                        Spans::from(Span::styled(sub_text, Style::default().fg(Color::DarkGray))),
-                    ];
+            let mut list_items =  Vec::new();
+            for state_item in &app.list.raw_items {
 
-                    ListItem::new(lines)
-                })
-                .collect();
+                if !filters.is_empty() {
+                    if let None = filters.iter().find(|x: &&String| {state_item.contains(&x[..])}) {
+                        continue;
+                    }
+                }
+
+                let parsed_item = ParsedItem::new(&state_item[..]);
+                let sub_text = parsed_item.start_date.unwrap_or("");
+                let lines = vec![
+                    Spans::from(Span::styled(
+                        parsed_item.body,
+                        Style::default().fg(Color::White).add_modifier(
+                            if parsed_item.complete {
+                                Modifier::CROSSED_OUT
+                            } else {
+                                Modifier::BOLD
+                            },
+                        ),
+                    )),
+                    Spans::from(Span::styled(sub_text, Style::default().fg(Color::DarkGray))),
+                ];
+
+                list_items.push(ListItem::new(lines));
+            }
+
 
             let list = List::new(list_items)
                 .block(
@@ -97,6 +103,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 Key::Char('k') => app.previous(),
                 Key::Char('l') => app.move_right(),
                 Key::Char('h') => app.move_left(),
+                Key::Char(' ') => app.select(&mut filters),
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
@@ -109,12 +116,12 @@ fn start_term() -> Result<(), Box<dyn Error>> {
 
 fn draw_attributes<B: Backend>(
     f: &mut Frame<'_, B>,
-    app: &mut App,
+    state: &mut State,
     selected_style: Style,
     chunks: Vec<Rect>,
 ) {
     {
-        let list_items: Vec<ListItem> = app
+        let list_items: Vec<ListItem> = state
             .list
             .contexts
             .iter()
@@ -124,17 +131,17 @@ fn draw_attributes<B: Backend>(
         let list = List::new(list_items)
             .block(
                 Block::default()
-                    .border_style(app.get_style(ActiveList::Contexts))
+                    .border_style(state.get_style(ActiveList::Contexts))
                     .borders(Borders::ALL)
                     .title("Contexts"),
             )
             .highlight_symbol("*")
             .highlight_style(selected_style);
-        f.render_stateful_widget(list, chunks[0], &mut app.context_state);
+        f.render_stateful_widget(list, chunks[0], &mut state.context_state);
     }
 
     {
-        let list_items: Vec<ListItem> = app
+        let list_items: Vec<ListItem> = state
             .list
             .tags
             .iter()
@@ -144,12 +151,12 @@ fn draw_attributes<B: Backend>(
         let list = List::new(list_items)
             .block(
                 Block::default()
-                    .border_style(app.get_style(ActiveList::Tags))
+                    .border_style(state.get_style(ActiveList::Tags))
                     .borders(Borders::ALL)
                     .title("Tags"),
             )
             .highlight_symbol("*")
             .highlight_style(selected_style);
-        f.render_stateful_widget(list, chunks[1], &mut app.tag_state);
+        f.render_stateful_widget(list, chunks[1], &mut state.tag_state);
     }
 }

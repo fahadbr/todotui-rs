@@ -194,25 +194,4 @@ impl<'a> ParsedItem<'a> {
             }
         }
     }
-
-    pub fn to_row_data(&self) -> Vec<Vec<String>> {
-        let mut max_length = 0;
-        if self.contexts.len() > max_length {
-            max_length = self.contexts.len();
-        }
-        if self.tags.len() > max_length {
-            max_length = self.tags.len();
-        }
-
-        let mut rows = Vec::with_capacity(max_length);
-        for i in 0..max_length {
-            let mut cols = Vec::with_capacity(3);
-            cols.push(String::from(*self.contexts.get(i).unwrap_or(&"")));
-            cols.push(String::from(*self.tags.get(i).unwrap_or(&"")));
-            cols.push(self.priority.to_string());
-            rows.push(cols);
-        }
-
-        rows
-    }
 }

@@ -7,8 +7,8 @@ use std::{collections::BTreeSet, io::BufReader, path::PathBuf};
 pub struct List {
     path: PathBuf,
     pub raw_items: Vec<String>,
-    pub contexts: BTreeSet<String>,
-    pub tags: BTreeSet<String>,
+    pub contexts: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 impl List {
