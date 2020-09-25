@@ -19,7 +19,6 @@ pub struct State {
     pub tag_state: ListState,
     pub list: todo::List,
 
-    filters: HashSet<String>,
     active_list: ActiveList,
 }
 
@@ -35,7 +34,6 @@ impl State {
             context_state: ListState::default(),
             tag_state: ListState::default(),
             active_list: ActiveList::Tasks,
-            filters: HashSet::new(),
             list: l,
         })
     }
@@ -80,15 +78,15 @@ impl State {
         }
     }
 
-    pub fn select(&mut self, filters: &mut HashSet<String>) {
+    pub fn select(& mut self, filters: &mut HashSet<String>) {
         let i = match self.get_active_state().selected() {
             Some(i) => i,
             None => return,
         };
 
         let filter = match self.active_list {
-            ActiveList::Contexts => String::from("@") + &self.list.contexts[i][..],
-            ActiveList::Tags => String::from("+") + &self.list.tags[i][..],
+            ActiveList::Contexts => self.list.contexts[i].toggle_select(),
+            ActiveList::Tags => self.list.tags[i].toggle_select(),
             _ => return,
         };
 

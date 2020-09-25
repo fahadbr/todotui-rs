@@ -21,7 +21,6 @@ use tui::{
 
 fn main() -> Result<(), Box<dyn Error>> {
     flags::parse();
-    //read_file()
     start_term()
 }
 
@@ -34,7 +33,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
 
     let events = Events::new();
     let mut filters = HashSet::new();
-    let mut app = State::new()?;
+    let mut state = State::new()?;
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
@@ -52,15 +51,38 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 .constraints([Percentage(50), Percentage(50)].as_ref())
                 .split(chunks[1]);
 
-            draw_attributes(f, &mut app, selected_style, attr_chunks);
+            draw_attributes(f, &mut state, selected_style, attr_chunks);
 
-            let mut list_items =  Vec::new();
-            for state_item in &app.list.raw_items {
-
-                if !filters.is_empty() {
-                    if let None = filters.iter().find(|x: &&String| {state_item.contains(&x[..])}) {
-                        continue;
+            let mut list_items = Vec::new();
+            for state_item in &state.list.raw_items {
+                let mut none_selected = true;
+                let mut found = false;
+                for ctx in &state.list.contexts {
+                    if ctx.selected {
+                        none_selected = false;
+                        if state_item.contains(&ctx.prefixed_val) {
+                            found = true;
+                            break;
+                        }
                     }
+                }
+                if !none_selected && !found {
+                    continue;
+                }
+
+                let mut none_selected = true;
+                let mut found = false;
+                for tag in &state.list.tags {
+                    if tag.selected {
+                        none_selected = false;
+                        if state_item.contains(&tag.prefixed_val) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !none_selected && !found {
+                    continue;
                 }
 
                 let parsed_item = ParsedItem::new(&state_item[..]);
@@ -68,13 +90,13 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 let lines = vec![
                     Spans::from(Span::styled(
                         parsed_item.body,
-                        Style::default().fg(Color::White).add_modifier(
-                            if parsed_item.complete {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(if parsed_item.complete {
                                 Modifier::CROSSED_OUT
                             } else {
                                 Modifier::BOLD
-                            },
-                        ),
+                            }),
                     )),
                     Spans::from(Span::styled(sub_text, Style::default().fg(Color::DarkGray))),
                 ];
@@ -82,28 +104,27 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 list_items.push(ListItem::new(lines));
             }
 
-
             let list = List::new(list_items)
                 .block(
                     Block::default()
-                        .border_style(app.get_style(ActiveList::Tasks))
+                        .border_style(state.get_style(ActiveList::Tasks))
                         .borders(Borders::ALL)
                         .title("Tasks"),
                 )
                 .highlight_style(selected_style)
                 .highlight_symbol("*");
 
-            f.render_stateful_widget(list, chunks[0], &mut app.task_state);
+            f.render_stateful_widget(list, chunks[0], &mut state.task_state);
         })?;
 
         match events.next()? {
             Event::Input(key) => match key {
                 Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break,
-                Key::Char('j') => app.next(),
-                Key::Char('k') => app.previous(),
-                Key::Char('l') => app.move_right(),
-                Key::Char('h') => app.move_left(),
-                Key::Char(' ') => app.select(&mut filters),
+                Key::Char('j') => state.next(),
+                Key::Char('k') => state.previous(),
+                Key::Char('l') => state.move_right(),
+                Key::Char('h') => state.move_left(),
+                Key::Char(' ') => state.select(&mut filters),
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
@@ -125,7 +146,7 @@ fn draw_attributes<B: Backend>(
             .list
             .contexts
             .iter()
-            .map(|i| ListItem::new(Span::raw(i)))
+            .map(|i| ListItem::new(Span::raw(&i.selected_str)))
             .collect();
 
         let list = List::new(list_items)
@@ -145,7 +166,7 @@ fn draw_attributes<B: Backend>(
             .list
             .tags
             .iter()
-            .map(|i| ListItem::new(Span::raw(i)))
+            .map(|i| ListItem::new(Span::raw(&i.selected_str)))
             .collect();
 
         let list = List::new(list_items)
