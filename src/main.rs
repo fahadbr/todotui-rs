@@ -32,8 +32,8 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let events = Events::new();
-    let mut filters = HashSet::new();
-    let mut state = State::new()?;
+    let mut string_owner = Vec::new();
+    let mut state = State::new(&mut string_owner)?;
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
@@ -54,37 +54,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
             draw_attributes(f, &mut state, selected_style, attr_chunks);
 
             let mut list_items = Vec::new();
-            for state_item in &state.list.raw_items {
-                let mut none_selected = true;
-                let mut found = false;
-                for ctx in &state.list.contexts {
-                    if ctx.selected {
-                        none_selected = false;
-                        if state_item.contains(&ctx.prefixed_val) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if !none_selected && !found {
-                    continue;
-                }
-
-                let mut none_selected = true;
-                let mut found = false;
-                for tag in &state.list.tags {
-                    if tag.selected {
-                        none_selected = false;
-                        if state_item.contains(&tag.prefixed_val) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if !none_selected && !found {
-                    continue;
-                }
-
+            for state_item in &state.filtered_items {
                 let parsed_item = ParsedItem::new(&state_item[..]);
                 let sub_text = parsed_item.start_date.unwrap_or("");
                 let lines = vec![
@@ -124,7 +94,7 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 Key::Char('k') => state.previous(),
                 Key::Char('l') => state.move_right(),
                 Key::Char('h') => state.move_left(),
-                Key::Char(' ') => state.select(&mut filters),
+                Key::Char(' ') => state.select(),
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },

@@ -1,6 +1,6 @@
 use crate::todo;
 
-use std::{collections::HashSet, io::Error as IOErr, path::Path};
+use std::{collections::BTreeSet, collections::HashSet, io::Error as IOErr, path::Path};
 use tui::{
     style::{Color, Style},
     widgets::ListState,
@@ -13,27 +13,34 @@ pub enum ActiveList {
     Tags,
 }
 
-pub struct State {
+pub struct State<'a> {
     pub task_state: ListState,
     pub context_state: ListState,
     pub tag_state: ListState,
-    pub list: todo::List,
+    pub list: todo::List<'a>,
+    pub filtered_items: Vec<&'a str>,
 
     active_list: ActiveList,
+
+    tag_filters: BTreeSet<&'a str>,
+    ctx_filters: BTreeSet<&'a str>,
 }
 
-impl State {
-    pub fn new() -> Result<State, IOErr> {
+impl<'a> State<'a> {
+    pub fn new(string_owner: &'a mut Vec<String>) -> Result<State, IOErr> {
         const FILENAME: &'static str = "main.todo.txt";
         let todo_dir = Path::new(env!("TODO_DIR"));
         let todo_path = todo_dir.join(FILENAME);
-        let l = todo::List::new(todo_path)?;
+        let l = todo::List::new(todo_path, string_owner)?;
 
         Ok(Self {
             task_state: ListState::default(),
             context_state: ListState::default(),
             tag_state: ListState::default(),
             active_list: ActiveList::Tasks,
+            tag_filters: BTreeSet::new(),
+            ctx_filters: BTreeSet::new(),
+            filtered_items: l.raw_items.clone(),
             list: l,
         })
     }
@@ -78,25 +85,59 @@ impl State {
         }
     }
 
-    pub fn select(& mut self, filters: &mut HashSet<String>) {
+    pub fn select(&mut self) {
         let i = match self.get_active_state().selected() {
             Some(i) => i,
             None => return,
         };
 
-        let filter = match self.active_list {
-            ActiveList::Contexts => self.list.contexts[i].toggle_select(),
-            ActiveList::Tags => self.list.tags[i].toggle_select(),
+        let (filter_opt, filters) = match self.active_list {
+            ActiveList::Contexts => (&mut self.list.contexts[i], &mut self.ctx_filters),
+            ActiveList::Tags => (&mut self.list.tags[i], &mut self.tag_filters),
             _ => return,
         };
 
-        if filters.contains(&filter) {
-            filters.remove(&filter);
+        filter_opt.toggle_select();
+        if filter_opt.selected {
+            filters.insert(filter_opt.val);
         } else {
-            filters.insert(filter);
-        };
+            filters.remove(filter_opt.val);
+        }
+
+        self.refresh_filtered_list();
     }
 
+    pub fn refresh_filtered_list(&mut self) {
+        self.filtered_items = self
+            .list
+            .raw_items
+            .iter()
+            .filter(|item| {
+                if !self.ctx_filters.is_empty() {
+                    if None
+                        == self
+                            .ctx_filters
+                            .iter()
+                            .find(|filter| item.contains(*filter))
+                    {
+                        return false;
+                    }
+                }
+                if !self.tag_filters.is_empty() {
+                    if None
+                        == self
+                            .tag_filters
+                            .iter()
+                            .find(|filter| item.contains(*filter))
+                    {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|x| *x)
+            .collect();
+    }
 
     fn get_active_list_len(&self) -> usize {
         use ActiveList::*;

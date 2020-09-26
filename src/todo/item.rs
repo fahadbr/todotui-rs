@@ -129,20 +129,14 @@ impl<'a> ParsedItem<'a> {
     }
 
     fn process_body(&mut self, word: &'a str) {
-        let chars: Vec<char> = word.chars().collect();
-        if chars.len() == 0 {
-            return;
-        }
-
-        // TODO: finish implementing
-        match chars[0] {
-            '@' => self
+        match word.chars().nth(0) {
+            Some('@') => self
                 .contexts
-                .push(word.strip_prefix("@").expect("couldn't trip @ symbol")),
-            '+' => self
+                .push(word),
+            Some('+') => self
                 .tags
-                .push(word.strip_prefix("+").expect("couldn't trip + symbol")),
-            _ => {
+                .push(word),
+            Some(_) => {
                 let things: Vec<&str> = word.splitn(2, ":").collect();
                 if things.len() != 2 {
                     return;
@@ -156,7 +150,8 @@ impl<'a> ParsedItem<'a> {
                     "rec" => self.recurrance = Some(val),
                     _ => self.extensions.push((key, val)),
                 }
-            }
+            },
+            None => return,
         }
     }
 
