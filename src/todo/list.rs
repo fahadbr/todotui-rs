@@ -1,44 +1,33 @@
 use super::item::ParsedItem;
 
-use std::{fs::File, path::Path};
 use std::io::prelude::*;
 use std::{collections::BTreeSet, io::BufReader, path::PathBuf};
+use std::{fs::File, path::Path};
 
-pub struct List<'a> {
-    path: PathBuf,
+pub struct ListRep<'a> {
     pub raw_items: Vec<&'a str>,
     pub contexts: Vec<FilterOpt<'a>>,
     pub tags: Vec<FilterOpt<'a>>,
 }
 
 //impl Default for List {
-    //fn default() -> Self {
-        //const FILENAME: &'static str = "main.todo.txt";
-        //let todo_dir = Path::new(env!("TODO_DIR"));
-        //let todo_path = todo_dir.join(FILENAME);
-        //Self::new(todo_path).expect("failed to find todotxt file")
-    //}
+//fn default() -> Self {
+//const FILENAME: &'static str = "main.todo.txt";
+//let todo_dir = Path::new(env!("TODO_DIR"));
+//let todo_path = todo_dir.join(FILENAME);
+//Self::new(todo_path).expect("failed to find todotxt file")
+//}
 //}
 
-impl<'a> List<'a> {
-    pub fn new(path: PathBuf,  string_owner: &'a mut Vec<String>) -> Result<List<'a>, std::io::Error> {
-        let file = File::open(&path)?;
-        let buf_reader = BufReader::new(file);
+impl<'a> ListRep<'a> {
+    pub fn new( handle: &'a ListHandle) -> ListRep<'a> {
 
         let mut items = Vec::new();
         let mut contexts = BTreeSet::new();
         let mut tags = BTreeSet::new();
 
-        for line_res in buf_reader.lines() {
-            match line_res {
-                Ok(line) => {
-                    string_owner.push(line);
-                }
-                Err(e) => return Err(e),
-            }
-        }
 
-        for line in string_owner.iter() {
+        for line in handle.lines.iter() {
             let i = ParsedItem::new(&line);
             items.push(&line[..]);
             for c in i.contexts.into_iter() {
@@ -49,20 +38,38 @@ impl<'a> List<'a> {
             }
         }
 
-        let list = List {
-            path,
-            contexts: contexts
-                .into_iter()
-                .map(|i| FilterOpt::new(i))
-                .collect(),
-            tags: tags
-                .into_iter()
-                .map(|i| FilterOpt::new(i))
-                .collect(),
+        let list = ListRep {
+            contexts: contexts.into_iter().map(|i| FilterOpt::new(i)).collect(),
+            tags: tags.into_iter().map(|i| FilterOpt::new(i)).collect(),
             raw_items: items,
         };
 
-        Ok(list)
+        list
+    }
+}
+
+pub struct ListHandle {
+    path: PathBuf,
+    lines: Vec<String>,
+}
+
+impl ListHandle {
+    pub fn new(path: PathBuf) -> Result<Self, std::io::Error> {
+        let file = File::open(&path)?;
+        let buf_reader = BufReader::new(file);
+
+        let mut lines = Vec::new();
+
+        for line_res in buf_reader.lines() {
+            match line_res {
+                Ok(line) => {
+                    lines.push(line);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(Self { path, lines })
     }
 }
 

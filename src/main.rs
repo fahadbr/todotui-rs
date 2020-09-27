@@ -5,8 +5,8 @@ mod state;
 mod todo;
 
 use event::{Event, Events};
-use std::{collections::HashSet, error::Error};
-use todo::ParsedItem;
+use std::{collections::HashSet, error::Error, path::Path};
+use todo::{ListHandle, ParsedItem};
 
 use state::{ActiveList, State};
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
@@ -32,8 +32,12 @@ fn start_term() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let events = Events::new();
-    let mut string_owner = Vec::new();
-    let mut state = State::new(&mut string_owner)?;
+    const FILENAME: &'static str = "main.todo.txt";
+    let todo_dir = Path::new(env!("TODO_DIR"));
+    let todo_path = todo_dir.join(FILENAME);
+    let list_handle = ListHandle::new(todo_path)?;
+
+    let mut state = State::new(&list_handle);
     let selected_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
@@ -98,7 +102,11 @@ fn start_term() -> Result<(), Box<dyn Error>> {
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
-            Event::Tick => continue,
+            Event::Tick => {
+                //list_handle = ListHandle::new(todo_path)?;
+                //state = State::new(&list_handle);
+                //let x = &mut list_handle;
+            }
         }
     }
 

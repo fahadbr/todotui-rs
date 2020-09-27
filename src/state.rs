@@ -1,6 +1,7 @@
 use crate::todo;
 
 use std::{collections::BTreeSet, collections::HashSet, io::Error as IOErr, path::Path};
+use todo::ListHandle;
 use tui::{
     style::{Color, Style},
     widgets::ListState,
@@ -17,7 +18,7 @@ pub struct State<'a> {
     pub task_state: ListState,
     pub context_state: ListState,
     pub tag_state: ListState,
-    pub list: todo::List<'a>,
+    pub list: todo::ListRep<'a>,
     pub filtered_items: Vec<&'a str>,
 
     active_list: ActiveList,
@@ -27,13 +28,10 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
-    pub fn new(string_owner: &'a mut Vec<String>) -> Result<State, IOErr> {
-        const FILENAME: &'static str = "main.todo.txt";
-        let todo_dir = Path::new(env!("TODO_DIR"));
-        let todo_path = todo_dir.join(FILENAME);
-        let l = todo::List::new(todo_path, string_owner)?;
+    pub fn new( handle: &'a ListHandle) -> Self {
+        let l = todo::ListRep::new(handle);
 
-        Ok(Self {
+        Self {
             task_state: ListState::default(),
             context_state: ListState::default(),
             tag_state: ListState::default(),
@@ -42,7 +40,7 @@ impl<'a> State<'a> {
             ctx_filters: BTreeSet::new(),
             filtered_items: l.raw_items.clone(),
             list: l,
-        })
+        }
     }
 
     pub fn next(&mut self) {
