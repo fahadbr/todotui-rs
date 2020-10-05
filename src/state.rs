@@ -1,7 +1,3 @@
-use crate::todo;
-
-use std::{collections::BTreeSet, collections::HashSet, io::Error as IOErr, path::Path};
-use todo::ListHandle;
 use tui::{
     style::{Color, Style},
     widgets::ListState,
@@ -14,47 +10,58 @@ pub enum ActiveList {
     Tags,
 }
 
-pub struct State<'a> {
-    pub task_state: ListState,
-    pub context_state: ListState,
-    pub tag_state: ListState,
-    pub list: todo::ListRep<'a>,
-    pub filtered_items: Vec<&'a str>,
-
-    active_list: ActiveList,
-
-    tag_filters: BTreeSet<&'a str>,
-    ctx_filters: BTreeSet<&'a str>,
+pub struct ListStateWrapper {
+    pub state: ListState,
+    len: usize,
 }
 
-impl<'a> State<'a> {
-    pub fn new( handle: &'a ListHandle) -> Self {
-        let l = todo::ListRep::new(handle);
+impl ListStateWrapper {
+    pub fn new(state: ListState, len: usize) -> Self {
+        Self { state, len }
+    }
+
+    pub fn next(&mut self) {
+        self.state.select(get_next(self.state.selected(), self.len))
+    }
+
+    pub fn previous(&mut self) {
+        self.state.select(get_prev(self.state.selected(), self.len))
+    }
+
+    pub fn reset(&mut self, len: usize) {
+        if self.len != len {
+            self.state = ListState::default();
+            self.len = len;
+        }
+    }
+}
+
+pub struct State {
+    pub task_state: ListStateWrapper,
+    pub context_state: ListStateWrapper,
+    pub tag_state: ListStateWrapper,
+    pub active_list: ActiveList,
+}
+
+impl State {
+    //pub fn new( handle: &'a ListHandle) -> Self {
+    pub fn new(tasklen: usize, ctxlen: usize, taglen: usize) -> Self {
+        //let l = todo::ListRep::new(handle);
 
         Self {
-            task_state: ListState::default(),
-            context_state: ListState::default(),
-            tag_state: ListState::default(),
+            task_state: ListStateWrapper::new(ListState::default(), tasklen),
+            context_state: ListStateWrapper::new(ListState::default(), ctxlen),
+            tag_state: ListStateWrapper::new(ListState::default(), taglen),
             active_list: ActiveList::Tasks,
-            tag_filters: BTreeSet::new(),
-            ctx_filters: BTreeSet::new(),
-            filtered_items: l.raw_items.clone(),
-            list: l,
         }
     }
 
     pub fn next(&mut self) {
-        let len = self.get_active_list_len();
-        let state = self.get_active_state();
-
-        state.select(get_next(state.selected(), len));
+        self.get_active_state().next();
     }
 
     pub fn previous(&mut self) {
-        let len = self.get_active_list_len();
-        let state = self.get_active_state();
-
-        state.select(get_prev(state.selected(), len));
+        self.get_active_state().previous();
     }
 
     pub fn move_right(&mut self) {
@@ -83,70 +90,7 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn select(&mut self) {
-        let i = match self.get_active_state().selected() {
-            Some(i) => i,
-            None => return,
-        };
-
-        let (filter_opt, filters) = match self.active_list {
-            ActiveList::Contexts => (&mut self.list.contexts[i], &mut self.ctx_filters),
-            ActiveList::Tags => (&mut self.list.tags[i], &mut self.tag_filters),
-            _ => return,
-        };
-
-        filter_opt.toggle_select();
-        if filter_opt.selected {
-            filters.insert(filter_opt.val);
-        } else {
-            filters.remove(filter_opt.val);
-        }
-
-        self.refresh_filtered_list();
-    }
-
-    pub fn refresh_filtered_list(&mut self) {
-        self.filtered_items = self
-            .list
-            .raw_items
-            .iter()
-            .filter(|item| {
-                if !self.ctx_filters.is_empty() {
-                    if None
-                        == self
-                            .ctx_filters
-                            .iter()
-                            .find(|filter| item.contains(*filter))
-                    {
-                        return false;
-                    }
-                }
-                if !self.tag_filters.is_empty() {
-                    if None
-                        == self
-                            .tag_filters
-                            .iter()
-                            .find(|filter| item.contains(*filter))
-                    {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|x| *x)
-            .collect();
-    }
-
-    fn get_active_list_len(&self) -> usize {
-        use ActiveList::*;
-        match self.active_list {
-            Tasks => self.list.raw_items.len(),
-            Contexts => self.list.contexts.len(),
-            Tags => self.list.tags.len(),
-        }
-    }
-
-    fn get_active_state(&mut self) -> &mut ListState {
+    fn get_active_state(&mut self) -> &mut ListStateWrapper {
         use ActiveList::*;
         match self.active_list {
             Tasks => &mut self.task_state,
