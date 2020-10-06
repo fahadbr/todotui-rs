@@ -1,6 +1,6 @@
 mod item;
 mod list;
 
-pub use item::ParsedItem;
-pub use list::ListRep;
-pub use list::ListHandle;
+pub use item::ParsedLine;
+pub use list::Rep as ListRep;
+pub use list::Handle as ListHandle;

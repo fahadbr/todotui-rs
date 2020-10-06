@@ -65,7 +65,7 @@ impl State {
     }
 
     pub fn move_right(&mut self) {
-        use ActiveList::*;
+        use ActiveList::{Contexts, Tags, Tasks};
         self.active_list = match self.active_list {
             Tasks => Contexts,
             Contexts => Tags,
@@ -74,7 +74,7 @@ impl State {
     }
 
     pub fn move_left(&mut self) {
-        use ActiveList::*;
+        use ActiveList::{Contexts, Tags, Tasks};
         self.active_list = match self.active_list {
             Tasks => Tags,
             Contexts => Tasks,
@@ -82,8 +82,8 @@ impl State {
         }
     }
 
-    pub fn get_style(&self, active_list: ActiveList) -> Style {
-        if self.active_list == active_list {
+    pub fn get_style(&self, active_list: &ActiveList) -> Style {
+        if &self.active_list == active_list {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::DarkGray)
@@ -91,7 +91,7 @@ impl State {
     }
 
     fn get_active_state(&mut self) -> &mut ListStateWrapper {
-        use ActiveList::*;
+        use ActiveList::{Contexts, Tags, Tasks};
         match self.active_list {
             Tasks => &mut self.task_state,
             Contexts => &mut self.context_state,

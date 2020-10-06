@@ -13,7 +13,7 @@ pub enum Event<I> {
 
 pub struct Events {
     rx: mpsc::Receiver<Event<Key>>,
-    input_handle: thread::JoinHandle<()>,
+    //input_handle: thread::JoinHandle<()>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +39,7 @@ impl Events {
     pub fn with_config(config: Config) -> Events {
         let (sender, receiver) = mpsc::channel();
         let input_handle = {
-            let sender = sender.clone();
+            //let sender = sender.clone();
             thread::spawn(move || {
                 let stdin = io::stdin();
                 for evt in stdin.keys() {
@@ -53,7 +53,7 @@ impl Events {
             })
         };
         Self {
-            input_handle,
+            //input_handle,
             rx: receiver,
         }
     }

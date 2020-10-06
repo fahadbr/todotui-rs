@@ -1,34 +1,34 @@
-use super::item::ParsedItem;
+use super::item::ParsedLine;
 
 use std::io::prelude::*;
 use std::{collections::BTreeSet, io::BufReader};
 use std::{fs::File, path::Path};
 
-pub struct ListRep {
+pub struct Rep {
     pub tasks: Vec<String>,
     pub contexts: Vec<String>,
     pub tags: Vec<String>,
 }
 
-impl ListRep {
-    pub fn new(handle: &ListHandle) -> Result<ListRep, std::io::Error> {
+impl Rep {
+    pub fn new(handle: &Handle) -> Result<Rep, std::io::Error> {
         let items = handle.get_lines()?;
         let mut contexts = BTreeSet::new();
         let mut tags = BTreeSet::new();
 
-        for line in items.iter() {
-            let i = ParsedItem::new(&line);
-            for c in i.contexts.into_iter() {
+        for line in &items {
+            let i = ParsedLine::new(&line);
+            for c in i.contexts {
                 contexts.insert(c);
             }
-            for t in i.tags.into_iter() {
+            for t in i.tags {
                 tags.insert(t);
             }
         }
 
-        let list = ListRep {
-            contexts: contexts.into_iter().map(|s| s.to_string()).collect(),
-            tags: tags.into_iter().map(|s| s.to_string()).collect(),
+        let list = Rep {
+            contexts: contexts.into_iter().map(str::to_string).collect(),
+            tags: tags.into_iter().map(str::to_string).collect(),
             tasks: items,
         };
 
@@ -36,11 +36,11 @@ impl ListRep {
     }
 }
 
-pub struct ListHandle<'a> {
+pub struct Handle<'a> {
     path: &'a Path,
 }
 
-impl<'a> ListHandle<'a> {
+impl<'a> Handle<'a> {
     pub fn new(path: &'a Path) -> Self {
         Self { path }
     }

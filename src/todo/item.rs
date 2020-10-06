@@ -2,7 +2,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
-pub struct ParsedItem<'a> {
+pub struct ParsedLine<'a> {
     pub raw: &'a str,
     pub body: &'a str,
     pub complete: bool,
@@ -38,7 +38,7 @@ impl Display for Parse {
     }
 }
 
-impl<'a> ParsedItem<'a> {
+impl<'a> ParsedLine<'a> {
     pub fn new(raw: &'a str) -> Self {
         let x: &[char] = &['\n', '\r'];
         let mut raw = raw.trim_end_matches(x);
@@ -59,19 +59,16 @@ impl<'a> ParsedItem<'a> {
             extensions: Vec::new(),
         };
 
-
         if raw.starts_with('x') {
             raw = raw.trim_start_matches('x').trim_start();
             item.complete = true;
         }
-
 
         let mut parse_state = if item.complete {
             Parse::CompletionDate
         } else {
             Parse::Priority
         };
-
 
         let mut body_start_idx = 0;
         for word in raw.split_whitespace() {
@@ -102,7 +99,7 @@ impl<'a> ParsedItem<'a> {
             }
         }
 
-        return Ok(priority);
+        Ok(priority)
     }
 
     fn is_date(word: &'a str) -> bool {
@@ -129,29 +126,25 @@ impl<'a> ParsedItem<'a> {
     }
 
     fn process_body(&mut self, word: &'a str) {
-        match word.chars().nth(0) {
-            Some('@') => self
-                .contexts
-                .push(word),
-            Some('+') => self
-                .tags
-                .push(word),
+        match word.chars().next() {
+            Some('@') => self.contexts.push(word),
+            Some('+') => self.tags.push(word),
             Some(_) => {
-                let things: Vec<&str> = word.splitn(2, ":").collect();
+                let things: Vec<&str> = word.splitn(2, ':').collect();
                 if things.len() != 2 {
                     return;
                 }
                 let key = things[0];
                 let val = things[1];
                 match key {
-                    "due" if ParsedItem::is_date(val) => self.due_date = Some(val),
-                    "t" if ParsedItem::is_date(val) => self.threshold_date = Some(val),
+                    "due" if ParsedLine::is_date(val) => self.due_date = Some(val),
+                    "t" if ParsedLine::is_date(val) => self.threshold_date = Some(val),
                     "h" if val == "1" => self.hidden = true,
                     "rec" => self.recurrance = Some(val),
                     _ => self.extensions.push((key, val)),
                 }
-            },
-            None => return,
+            }
+            None => {}
         }
     }
 
@@ -160,24 +153,21 @@ impl<'a> ParsedItem<'a> {
             match parse_state {
                 Parse::CompletionDate => {
                     *parse_state = Parse::Priority;
-                    if ParsedItem::is_date(word) {
+                    if ParsedLine::is_date(word) {
                         self.completion_date = Some(word);
                         return;
                     }
                 }
                 Parse::Priority => {
                     *parse_state = Parse::StartDate;
-                    match ParsedItem::is_priority(word) {
-                        Ok(priority) => {
-                            self.priority = priority;
-                            return;
-                        }
-                        Err(_) => {}
+                    if let Ok(priority) = ParsedLine::is_priority(word) {
+                        self.priority = priority;
+                        return;
                     }
                 }
                 Parse::StartDate => {
                     *parse_state = Parse::Body;
-                    if ParsedItem::is_date(word) {
+                    if ParsedLine::is_date(word) {
                         self.start_date = Some(word);
                         return;
                     }

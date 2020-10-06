@@ -1,3 +1,6 @@
+#![warn(clippy::all)]
+#![warn(clippy::pedantic)]
+
 mod app;
 mod event;
 mod flags;
@@ -6,7 +9,7 @@ mod todo;
 
 use event::{Event, Events};
 use std::{collections::BTreeSet, error::Error, path::Path};
-use todo::{ListHandle, ListRep, ParsedItem};
+use todo::{ListHandle, ListRep, ParsedLine};
 
 use state::{ActiveList, State};
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
@@ -54,8 +57,9 @@ fn start_term() -> Result<(), Box<dyn Error>> {
  */
 
 fn run_with_term<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), Box<dyn Error>> {
+    const FILENAME: &str = "main.todo.txt";
+
     let events = Events::new();
-    const FILENAME: &'static str = "main.todo.txt";
     let todo_dir = Path::new(env!("TODO_DIR"));
     let todo_path = todo_dir.join(FILENAME);
     let list_handle = ListHandle::new(&todo_path);
@@ -84,22 +88,19 @@ fn run_with_file<B: Backend>(
             .tasks
             .iter()
             .enumerate()
-            .filter(|(_, task)| {
-                if !ctx_filters.is_empty() {
-                    if None == ctx_filters.iter().find(|&f| task.contains(f)) {
-                        return false;
-                    }
+            .filter_map(|(i, task)| {
+                if !ctx_filters.is_empty() && None == ctx_filters.iter().find(|&f| task.contains(f))
+                {
+                    return None;
                 }
-                if !tag_filters.is_empty() {
-                    if None == tag_filters.iter().find(|&f| task.contains(f)) {
-                        return false;
-                    }
+                if !tag_filters.is_empty() && None == tag_filters.iter().find(|&f| task.contains(f))
+                {
+                    return None;
                 }
-                true
-            })
-            .map(|(i, task)| TaskRep {
-                index: i,
-                val: &task[..],
+                Some(TaskRep {
+                    index: i,
+                    val: &task[..],
+                })
             })
             .collect();
 
@@ -151,7 +152,7 @@ fn run_with_view<B: Backend>(
     events: &Events,
     state: &mut State,
     filter_views: &FilterViews,
-    filtered_items: &Vec<TaskRep>,
+    filtered_items: &[TaskRep],
 ) -> Result<Action, Box<dyn Error>> {
     let selected_style = Style::default()
         .fg(Color::Green)
@@ -170,11 +171,11 @@ fn run_with_view<B: Backend>(
                 .constraints([Percentage(50), Percentage(50)].as_ref())
                 .split(chunks[1]);
 
-            draw_attributes(f, state, filter_views, selected_style, attr_chunks);
+            draw_attributes(f, state, filter_views, selected_style, &attr_chunks);
 
             let mut list_items = Vec::new();
             for state_item in filtered_items {
-                let parsed_item = ParsedItem::new(&state_item.val[..]);
+                let parsed_item = ParsedLine::new(&state_item.val[..]);
                 let sub_text = parsed_item.start_date.unwrap_or("");
                 let lines = vec![
                     Spans::from(Span::styled(
@@ -196,7 +197,7 @@ fn run_with_view<B: Backend>(
             let list = List::new(list_items)
                 .block(
                     Block::default()
-                        .border_style(state.get_style(ActiveList::Tasks))
+                        .border_style(state.get_style(&ActiveList::Tasks))
                         .borders(Borders::ALL)
                         .title("Tasks"),
                 )
@@ -215,29 +216,23 @@ fn run_with_view<B: Backend>(
                 Key::Char('h') => state.move_left(),
                 Key::Char(' ') => {
                     let index = match state.active_list {
-                        ActiveList::Tasks => match state.task_state.state.selected() {
-                            Some(i) => filtered_items[i].index,
-                            None => continue,
-                        },
-                        ActiveList::Contexts => match state.context_state.state.selected() {
-                            Some(i) => i,
-                            None => continue,
-                        },
-                        ActiveList::Tags => match state.tag_state.state.selected() {
-                            Some(i) => i,
-                            None => continue,
-                        },
+                        ActiveList::Tasks => state
+                            .task_state
+                            .state
+                            .selected()
+                            .map(|i| filtered_items[i].index),
+                        ActiveList::Contexts => state.context_state.state.selected(),
+                        ActiveList::Tags => state.tag_state.state.selected(),
                     };
-                    return Ok(Action::Select(index));
+
+                    if let Some(i) = index {
+                        return Ok(Action::Select(i));
+                    }
                 }
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
-            Event::Tick => {
-                //list_handle = ListHandle::new(todo_path)?;
-                //state = State::new(&list_handle);
-                //let x = &mut list_handle;
-            }
+            Event::Tick => {},
         }
     }
 
@@ -249,7 +244,7 @@ fn draw_attributes<B: Backend>(
     state: &mut State,
     filter_views: &FilterViews,
     selected_style: Style,
-    chunks: Vec<Rect>,
+    chunks: &[Rect],
 ) {
     {
         let list_items: Vec<ListItem> = filter_views
@@ -261,7 +256,7 @@ fn draw_attributes<B: Backend>(
         let list = List::new(list_items)
             .block(
                 Block::default()
-                    .border_style(state.get_style(ActiveList::Contexts))
+                    .border_style(state.get_style(&ActiveList::Contexts))
                     .borders(Borders::ALL)
                     .title("Contexts"),
             )
@@ -280,7 +275,7 @@ fn draw_attributes<B: Backend>(
         let list = List::new(list_items)
             .block(
                 Block::default()
-                    .border_style(state.get_style(ActiveList::Tags))
+                    .border_style(state.get_style(&ActiveList::Tags))
                     .borders(Borders::ALL)
                     .title("Tags"),
             )
@@ -303,7 +298,7 @@ pub struct TaskRep<'a> {
     pub val: &'a str,
 }
 
-fn make_view(input_list: &Vec<String>, filters: &BTreeSet<&str>) -> Vec<String> {
+fn make_view(input_list: &[String], filters: &BTreeSet<&str>) -> Vec<String> {
     input_list
         .iter()
         .map(|v| {
