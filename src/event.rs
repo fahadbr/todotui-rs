@@ -38,7 +38,7 @@ impl Events {
 
     pub fn with_config(config: Config) -> Events {
         let (sender, receiver) = mpsc::channel();
-        let input_handle = {
+        //let input_handle = {
             //let sender = sender.clone();
             thread::spawn(move || {
                 let stdin = io::stdin();
@@ -50,8 +50,8 @@ impl Events {
                         }
                     }
                 }
-            })
-        };
+            });
+        //};
         Self {
             //input_handle,
             rx: receiver,

@@ -3,11 +3,21 @@ use tui::{
     widgets::ListState,
 };
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ActiveList {
     Tasks,
     Contexts,
     Tags,
+}
+
+impl ActiveList {
+    pub fn to_string(&self) -> &str {
+        match self {
+            ActiveList::Tasks => "Tasks",
+            ActiveList::Contexts => "Contexts",
+            ActiveList::Tags => "Tags",
+        }
+    }
 }
 
 pub struct ListStateWrapper {
@@ -82,8 +92,8 @@ impl State {
         }
     }
 
-    pub fn get_style(&self, active_list: &ActiveList) -> Style {
-        if &self.active_list == active_list {
+    pub fn get_style(&self, active_list: ActiveList) -> Style {
+        if self.active_list == active_list {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::DarkGray)
@@ -91,11 +101,14 @@ impl State {
     }
 
     fn get_active_state(&mut self) -> &mut ListStateWrapper {
-        use ActiveList::{Contexts, Tags, Tasks};
-        match self.active_list {
-            Tasks => &mut self.task_state,
-            Contexts => &mut self.context_state,
-            Tags => &mut self.tag_state,
+        self.get_state_mut(self.active_list)
+    }
+
+    pub fn get_state_mut(&mut self, list_t: ActiveList) -> &mut ListStateWrapper {
+        match list_t {
+            ActiveList::Tasks => &mut self.task_state,
+            ActiveList::Contexts => &mut self.context_state,
+            ActiveList::Tags => &mut self.tag_state,
         }
     }
 }
