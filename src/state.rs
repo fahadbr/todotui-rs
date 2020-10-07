@@ -40,8 +40,12 @@ impl ListStateWrapper {
 
     pub fn reset(&mut self, len: usize) {
         if self.len != len {
-            self.state = ListState::default();
             self.len = len;
+            if let Some(i) = self.state.selected() {
+                if i >= len {
+                    self.state = ListState::default();
+                }
+            }
         }
     }
 }

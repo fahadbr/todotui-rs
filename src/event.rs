@@ -1,7 +1,7 @@
-use std::io;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use std::io;
 
 use termion::event::Key;
 use termion::input::TermRead;
@@ -39,18 +39,19 @@ impl Events {
     pub fn with_config(config: Config) -> Events {
         let (sender, receiver) = mpsc::channel();
         //let input_handle = {
-            //let sender = sender.clone();
-            thread::spawn(move || {
-                let stdin = io::stdin();
-                for evt in stdin.keys() {
-                    if let Ok(key) = evt {
-                        sender.send(Event::Input(key)).unwrap();
-                        if key == config.exit_key {
-                            return;
-                        }
+        //let sender = sender.clone();
+        thread::spawn(move || {
+            let stdin = io::stdin();
+            for evt in stdin.keys() {
+                if let Ok(key) = evt {
+                    sender.send(Event::Input(key)).unwrap();
+                    if key == config.exit_key {
+                        return;
                     }
                 }
-            });
+            }
+        });
+
         //};
         Self {
             //input_handle,
@@ -61,5 +62,4 @@ impl Events {
     pub fn next(&self) -> Result<Event<Key>, mpsc::RecvError> {
         self.rx.recv()
     }
-
 }

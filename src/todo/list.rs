@@ -1,17 +1,18 @@
 use super::item::ParsedLine;
 
-use std::io::prelude::*;
-use std::{collections::BTreeSet, io::BufReader};
+use std::io::{prelude::*, Error};
+use std::{collections::BTreeSet, fs, io::BufReader};
 use std::{fs::File, path::Path};
 
 pub struct Rep {
     pub tasks: Vec<String>,
     pub contexts: Vec<String>,
     pub tags: Vec<String>,
+    pub modified: bool,
 }
 
 impl Rep {
-    pub fn new(handle: &Handle) -> Result<Rep, std::io::Error> {
+    pub fn new(handle: &Handle) -> Result<Rep, Error> {
         let items = handle.get_lines()?;
         let mut contexts = BTreeSet::new();
         let mut tags = BTreeSet::new();
@@ -30,6 +31,7 @@ impl Rep {
             contexts: contexts.into_iter().map(str::to_string).collect(),
             tags: tags.into_iter().map(str::to_string).collect(),
             tasks: items,
+            modified: false,
         };
 
         Ok(list)
@@ -45,7 +47,7 @@ impl<'a> Handle<'a> {
         Self { path }
     }
 
-    pub fn get_lines(&self) -> Result<Vec<String>, std::io::Error> {
+    pub fn get_lines(&self) -> Result<Vec<String>, Error> {
         let file = File::open(self.path)?;
         let buf_reader = BufReader::new(file);
 
@@ -62,5 +64,23 @@ impl<'a> Handle<'a> {
 
         Ok(lines)
     }
-}
 
+    pub fn write(&self, lines: &[String]) -> Result<(), Error> {
+        let mut tmp_file_path = self.path.parent().expect("betta be hea").to_owned();
+        tmp_file_path.push(".todotuirs.tmp");
+        let mut tmp_file = File::create(&tmp_file_path)?;
+
+        for line in lines {
+            match writeln!(tmp_file, "{}", line) {
+                Ok(_) => {}
+
+                // TODO: remove temporary file on error
+                Err(e) => return Err(e),
+            };
+        }
+
+        fs::rename(&tmp_file_path, self.path)?;
+
+        Ok(())
+    }
+}

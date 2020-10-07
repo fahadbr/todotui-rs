@@ -2,6 +2,7 @@ use crate::event::{Event, Events};
 use crate::state::{ActiveList, State};
 use crate::todo::{ListHandle, ListRep, ParsedLine};
 
+use chrono::Utc;
 use std::{collections::BTreeSet, error::Error, path::Path};
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
@@ -12,10 +13,13 @@ use tui::{
     widgets::{Block, Borders, List, ListItem},
     Frame, Terminal,
 };
-use chrono::Utc;
 
+
+#[derive(Debug)]
 enum Action {
     Select(usize),
+    Write,
+    Delete(usize),
     Reload,
     Exit,
 }
@@ -40,25 +44,6 @@ pub fn start_term() -> Result<(), Box<dyn Error>> {
     run_with_term(&mut terminal)
 }
 
-/*
- * term
- *
- * filehandle
- *
- * vec of tasks
- *
- * vec of ctx
- * vec of tag
- *
- * ctx state
- * tag state
- * applied filters
- *
- * filtered items
- * task state
- *
- */
-
 fn run_with_term<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), Box<dyn Error>> {
     const FILENAME: &str = "main.todo.txt";
 
@@ -67,14 +52,20 @@ fn run_with_term<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), Box<dyn E
     let todo_path = todo_dir.join(FILENAME);
     let list_handle = ListHandle::new(&todo_path);
 
-    run_with_file(terminal, &list_handle, &events)
+    loop {
+        match run_with_file(terminal, &list_handle, &events)? {
+            Action::Reload => {} // just continue
+            Action::Exit => break Ok(()),
+            action => panic!(format!("{:?} action unhandled at this stage", action))
+        };
+    }
 }
 
 fn run_with_file<B: Backend>(
     terminal: &mut Terminal<B>,
     list_handle: &ListHandle,
     events: &Events,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Action, Box<dyn Error>> {
     let mut list_rep = ListRep::new(list_handle)?;
 
     let mut state = State::new(
@@ -125,13 +116,12 @@ fn run_with_file<B: Backend>(
                             .nth(2)
                             .expect("what")
                             .to_owned();
-                            //.strip_prefix("x ")
-                            //.expect("what")
-                            //.to_owned();
                     } else {
                         let dt = Utc::today();
-                        list_rep.tasks[i] = format!("x {} {}", dt.format("%Y-%m-%d"), list_rep.tasks[i]);
+                        list_rep.tasks[i] =
+                            format!("x {} {}", dt.format("%Y-%m-%d"), list_rep.tasks[i]);
                     }
+                    list_rep.modified = true;
                 }
 
                 ActiveList::Contexts => {
@@ -149,8 +139,19 @@ fn run_with_file<B: Backend>(
                     }
                 }
             },
-            Action::Reload => {}
-            Action::Exit => return Ok(()),
+            Action::Write => {
+                if list_rep.modified {
+                    list_handle.write(&list_rep.tasks)?;
+                    list_rep.modified = false;
+                }
+            }
+            Action::Delete(i) => {
+                if ActiveList::Tasks == state.active_list {
+                    list_rep.tasks.remove(i);
+                    list_rep.modified = true;
+                }
+            }
+            action => return Ok(action),
         }
     }
 }
@@ -166,7 +167,7 @@ fn run_with_view<B: Backend>(
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
 
-    loop {
+    let res = loop {
         terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -233,7 +234,7 @@ fn run_with_view<B: Backend>(
 
         match events.next()? {
             Event::Input(key) => match key {
-                Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break,
+                Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break Action::Exit,
                 Key::Char('j') => state.next(),
                 Key::Char('k') => state.previous(),
                 Key::Char('l') => state.move_right(),
@@ -250,17 +251,26 @@ fn run_with_view<B: Backend>(
                     };
 
                     if let Some(i) = index {
-                        return Ok(Action::Select(i));
+                        break Action::Select(i);
                     }
                 }
+                Key::Char('w') => break Action::Write,
+                Key::Char('D') => {
+                    if ActiveList::Tasks == state.active_list {
+                        if let Some(i) = state.task_state.state.selected() {
+                            break Action::Delete(i);
+                        }
+                    }
+                }
+                Key::Char('r') => break Action::Reload,
                 //Key::Up => tlt.list.raw_items.push(String::from("new item")),
                 _ => {}
             },
             Event::Tick => {}
         }
-    }
+    };
 
-    Ok(Action::Exit)
+    Ok(res)
 }
 
 fn draw_attributes<B: Backend>(
