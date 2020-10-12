@@ -1,8 +1,8 @@
-use crate::todo::ParsedLine;
 use crate::{
     event::{Event, Handler as EventHandler},
     runner::Action,
 };
+use crate::{filters::Filters, todo::ParsedLine};
 
 use termion::event::Key;
 use tui::{
@@ -136,14 +136,14 @@ pub struct MainView<'a> {
     //pub state: RefCell<State>,
     pub state: &'a mut State,
     pub filtered_items: Vec<ParsedLine<'a>>,
-    pub filter_views: [Vec<String>; 2],
+    pub filter_views: Filters<Vec<String>>,
 }
 
 impl<'a> MainView<'a> {
     pub fn new(
         state: &'a mut State,
         filtered_items: Vec<ParsedLine<'a>>,
-        filter_views: [Vec<String>; 2],
+        filter_views: Filters<Vec<String>>,
     ) -> Self {
         Self {
             state,
@@ -172,7 +172,6 @@ impl<'a> MainView<'a> {
             .split(chunks[1]);
 
         self.draw_attributes(f, selected_style, ActiveList::Contexts, attr_chunks[0]);
-
         self.draw_attributes(f, selected_style, ActiveList::Tags, attr_chunks[1]);
 
         let list_items: Vec<ListItem> = self
@@ -218,13 +217,9 @@ impl<'a> MainView<'a> {
         list_t: ActiveList,
         chunk: Rect,
     ) {
-        let filter_opts = match list_t {
-            ActiveList::Tasks => panic!("not supposed to happen"),
-            ActiveList::Contexts => &self.filter_views[0],
-            ActiveList::Tags => &self.filter_views[1],
-        };
-
-        let list_items: Vec<ListItem> = filter_opts
+        let list_items: Vec<ListItem> = self
+            .filter_views
+            .get(list_t)
             .iter()
             .map(|i| ListItem::new(Span::raw(i)))
             .collect();

@@ -88,10 +88,10 @@ fn run_with_file<B: Backend>(
         let main_view = MainView::new(
             &mut state,
             filtered_items,
-            [
+            Filters::new(
                 make_view_strings(&list_rep.filters.contexts, &active_filters.contexts),
                 make_view_strings(&list_rep.filters.tags, &active_filters.tags),
-            ],
+            ),
         );
 
         let action = run_with_view(terminal, eventgen, main_view)?;
@@ -112,9 +112,9 @@ fn run_with_file<B: Backend>(
                     list_rep.modified = true;
                 }
 
-                active_list @ ActiveList::Contexts | active_list @ ActiveList::Tags => {
-                    let filters = active_filters.get_mut(active_list);
-                    let filter_source = list_rep.filters.get(active_list);
+                al @ ActiveList::Contexts | al @ ActiveList::Tags => {
+                    let filters = active_filters.get_mut(al);
+                    let filter_source = list_rep.filters.get(al);
                     if filters.contains(&filter_source[i][..]) {
                         filters.remove(&filter_source[i][..]);
                     } else {
