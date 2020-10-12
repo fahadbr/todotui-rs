@@ -1,12 +1,19 @@
-use crate::{app::{ActiveList, MainView, State}, todo::ParsedLine};
-use crate::event::{Generator, Handler};
 use crate::todo::{ListHandle, ListRep};
+use crate::{
+    app::{ActiveList, MainView, State},
+    todo::ParsedLine,
+};
+use crate::{
+    event::{Generator, Handler},
+    filters::Filters,
+};
 
 use chrono::Utc;
 use std::{collections::BTreeSet, error::Error, path::Path};
 use termion::{input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
-    backend::{Backend, TermionBackend}, Terminal,
+    backend::{Backend, TermionBackend},
+    Terminal,
 };
 
 #[derive(Debug)]
@@ -17,7 +24,6 @@ pub enum Action {
     Reload,
     Exit,
 }
-
 
 pub fn start_term() -> Result<(), Box<dyn Error>> {
     let stdout = std::io::stdout().into_raw_mode()?;
@@ -55,12 +61,14 @@ fn run_with_file<B: Backend>(
 
     let mut state = State::new(
         list_rep.tasks.len(),
-        list_rep.contexts.len(),
-        list_rep.tags.len(),
+        list_rep.filters.contexts.len(),
+        list_rep.filters.tags.len(),
     );
 
-    let mut ctx_filters: BTreeSet<&str> = BTreeSet::new();
-    let mut tag_filters: BTreeSet<&str> = BTreeSet::new();
+    //let mut ctx_filters: BTreeSet<&str> = BTreeSet::new();
+    //let mut tag_filters: BTreeSet<&str> = BTreeSet::new();
+    let mut active_filters: Filters<BTreeSet<&str>> =
+        Filters::new(BTreeSet::new(), BTreeSet::new());
 
     loop {
         let filtered_items: Vec<ParsedLine> = list_rep
@@ -68,15 +76,10 @@ fn run_with_file<B: Backend>(
             .iter()
             .enumerate()
             .filter_map(|(i, task)| {
-                if !ctx_filters.is_empty() && None == ctx_filters.iter().find(|&f| task.contains(f))
-                {
-                    return None;
+                if active_filters.include(task) {
+                    return Some(ParsedLine::new(&task[..], i));
                 }
-                if !tag_filters.is_empty() && None == tag_filters.iter().find(|&f| task.contains(f))
-                {
-                    return None;
-                }
-                Some(ParsedLine::new(&task[..], i))
+                None
             })
             .collect();
 
@@ -86,8 +89,8 @@ fn run_with_file<B: Backend>(
             &mut state,
             filtered_items,
             [
-                make_view_strings(&list_rep.contexts, &ctx_filters),
-                make_view_strings(&list_rep.tags, &tag_filters),
+                make_view_strings(&list_rep.filters.contexts, &active_filters.contexts),
+                make_view_strings(&list_rep.filters.tags, &active_filters.tags),
             ],
         );
 
@@ -96,32 +99,26 @@ fn run_with_file<B: Backend>(
         match action {
             Action::Select(i) => match state.active_list {
                 ActiveList::Tasks => {
-                    if list_rep.tasks[i].starts_with("x ") {
-                        list_rep.tasks[i] = list_rep.tasks[i]
+                    list_rep.tasks[i] = if list_rep.tasks[i].starts_with("x ") {
+                        list_rep.tasks[i]
                             .splitn(3, ' ')
                             .nth(2)
                             .expect("what")
-                            .to_owned();
+                            .to_owned()
                     } else {
                         let dt = Utc::today();
-                        list_rep.tasks[i] =
-                            format!("x {} {}", dt.format("%Y-%m-%d"), list_rep.tasks[i]);
-                    }
+                        format!("x {} {}", dt.format("%Y-%m-%d"), list_rep.tasks[i])
+                    };
                     list_rep.modified = true;
                 }
 
-                ActiveList::Contexts => {
-                    if ctx_filters.contains(&list_rep.contexts[i][..]) {
-                        ctx_filters.remove(&list_rep.contexts[i][..]);
+                active_list @ ActiveList::Contexts | active_list @ ActiveList::Tags => {
+                    let filters = active_filters.get_mut(active_list);
+                    let filter_source = list_rep.filters.get(active_list);
+                    if filters.contains(&filter_source[i][..]) {
+                        filters.remove(&filter_source[i][..]);
                     } else {
-                        ctx_filters.insert(&list_rep.contexts[i]);
-                    }
-                }
-                ActiveList::Tags => {
-                    if tag_filters.contains(&list_rep.tags[i][..]) {
-                        tag_filters.remove(&list_rep.tags[i][..]);
-                    } else {
-                        tag_filters.insert(&list_rep.tags[i]);
+                        filters.insert(&filter_source[i]);
                     }
                 }
             },

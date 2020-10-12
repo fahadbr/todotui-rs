@@ -6,6 +6,7 @@ mod event;
 mod flags;
 mod app;
 mod todo;
+mod filters;
 
 use std::{error::Error, fs::File};
 use std::io::prelude::*;

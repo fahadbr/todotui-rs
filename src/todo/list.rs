@@ -1,3 +1,5 @@
+use crate::filters::Filters;
+
 use super::item::ParsedLine;
 
 use std::io::{prelude::*, Error};
@@ -6,8 +8,7 @@ use std::{fs::File, path::Path};
 
 pub struct Rep {
     pub tasks: Vec<String>,
-    pub contexts: Vec<String>,
-    pub tags: Vec<String>,
+    pub filters: Filters<Vec<String>>,
     pub modified: bool,
 }
 
@@ -28,8 +29,10 @@ impl Rep {
         }
 
         let list = Rep {
-            contexts: contexts.into_iter().map(str::to_string).collect(),
-            tags: tags.into_iter().map(str::to_string).collect(),
+            filters: Filters::new(
+                contexts.into_iter().map(str::to_string).collect(),
+                tags.into_iter().map(str::to_string).collect(),
+            ),
             tasks: items,
             modified: false,
         };
