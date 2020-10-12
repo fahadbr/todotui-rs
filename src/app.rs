@@ -1,213 +1,191 @@
-use crate::event::{Event, Events};
-use crate::state::{ActiveList, State};
-use crate::todo::{ListHandle, ListRep, ParsedLine};
+use crate::todo::ParsedLine;
+use crate::{
+    event::{Event, Handler as EventHandler},
+    runner::Action,
+};
 
-use chrono::Utc;
-use std::{collections::BTreeSet, error::Error, path::Path};
-use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
+use termion::event::Key;
 use tui::{
-    backend::{Backend, TermionBackend},
+    backend::Backend,
     layout::{Constraint::Percentage, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem},
-    Frame, Terminal,
+    widgets::{Block, Borders, List, ListItem, ListState},
+    Frame,
 };
 
-
-#[derive(Debug)]
-enum Action {
-    Select(usize),
-    Write,
-    Delete(usize),
-    Reload,
-    Exit,
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ActiveList {
+    Tasks,
+    Contexts,
+    Tags,
 }
 
-pub struct FilterViews {
-    pub contexts: Vec<String>,
-    pub tags: Vec<String>,
-}
-
-pub struct TaskRep<'a> {
-    pub index: usize,
-    pub val: &'a str,
-}
-
-pub fn start_term() -> Result<(), Box<dyn Error>> {
-    let stdout = std::io::stdout().into_raw_mode()?;
-    let stdout = MouseTerminal::from(stdout);
-    let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    run_with_term(&mut terminal)
-}
-
-fn run_with_term<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), Box<dyn Error>> {
-    const FILENAME: &str = "main.todo.txt";
-
-    let events = Events::new();
-    let todo_dir = Path::new(env!("TODO_DIR"));
-    let todo_path = todo_dir.join(FILENAME);
-    let list_handle = ListHandle::new(&todo_path);
-
-    loop {
-        match run_with_file(terminal, &list_handle, &events)? {
-            Action::Reload => {} // just continue
-            Action::Exit => break Ok(()),
-            action => panic!(format!("{:?} action unhandled at this stage", action))
-        };
-    }
-}
-
-fn run_with_file<B: Backend>(
-    terminal: &mut Terminal<B>,
-    list_handle: &ListHandle,
-    events: &Events,
-) -> Result<Action, Box<dyn Error>> {
-    let mut list_rep = ListRep::new(list_handle)?;
-
-    let mut state = State::new(
-        list_rep.tasks.len(),
-        list_rep.contexts.len(),
-        list_rep.tags.len(),
-    );
-
-    let mut ctx_filters: BTreeSet<&str> = BTreeSet::new();
-    let mut tag_filters: BTreeSet<&str> = BTreeSet::new();
-
-    loop {
-        let filtered_items: Vec<TaskRep> = list_rep
-            .tasks
-            .iter()
-            .enumerate()
-            .filter_map(|(i, task)| {
-                if !ctx_filters.is_empty() && None == ctx_filters.iter().find(|&f| task.contains(f))
-                {
-                    return None;
-                }
-                if !tag_filters.is_empty() && None == tag_filters.iter().find(|&f| task.contains(f))
-                {
-                    return None;
-                }
-                Some(TaskRep {
-                    index: i,
-                    val: &task[..],
-                })
-            })
-            .collect();
-
-        let filter_view = FilterViews {
-            contexts: make_view(&list_rep.contexts, &ctx_filters),
-            tags: make_view(&list_rep.tags, &tag_filters),
-        };
-
-        state.task_state.reset(filtered_items.len());
-
-        let action = run_with_view(terminal, events, &mut state, &filter_view, &filtered_items)?;
-
-        match action {
-            Action::Select(i) => match state.active_list {
-                ActiveList::Tasks => {
-                    if list_rep.tasks[i].starts_with("x ") {
-                        list_rep.tasks[i] = list_rep.tasks[i]
-                            .splitn(3, ' ')
-                            .nth(2)
-                            .expect("what")
-                            .to_owned();
-                    } else {
-                        let dt = Utc::today();
-                        list_rep.tasks[i] =
-                            format!("x {} {}", dt.format("%Y-%m-%d"), list_rep.tasks[i]);
-                    }
-                    list_rep.modified = true;
-                }
-
-                ActiveList::Contexts => {
-                    if ctx_filters.contains(&list_rep.contexts[i][..]) {
-                        ctx_filters.remove(&list_rep.contexts[i][..]);
-                    } else {
-                        ctx_filters.insert(&list_rep.contexts[i]);
-                    }
-                }
-                ActiveList::Tags => {
-                    if tag_filters.contains(&list_rep.tags[i][..]) {
-                        tag_filters.remove(&list_rep.tags[i][..]);
-                    } else {
-                        tag_filters.insert(&list_rep.tags[i]);
-                    }
-                }
-            },
-            Action::Write => {
-                if list_rep.modified {
-                    list_handle.write(&list_rep.tasks)?;
-                    list_rep.modified = false;
-                }
-            }
-            Action::Delete(i) => {
-                if ActiveList::Tasks == state.active_list {
-                    list_rep.tasks.remove(i);
-                    list_rep.modified = true;
-                }
-            }
-            action => return Ok(action),
+impl ActiveList {
+    pub fn to_string(&self) -> &str {
+        match self {
+            ActiveList::Tasks => "Tasks",
+            ActiveList::Contexts => "Contexts",
+            ActiveList::Tags => "Tags",
         }
     }
 }
 
-fn run_with_view<B: Backend>(
-    terminal: &mut Terminal<B>,
-    events: &Events,
-    state: &mut State,
-    filter_views: &FilterViews,
-    filtered_items: &[TaskRep],
-) -> Result<Action, Box<dyn Error>> {
-    let selected_style = Style::default()
-        .fg(Color::Green)
-        .add_modifier(Modifier::BOLD);
+pub struct BlockState {
+    pub pos: ListState,
+    len: usize,
+}
 
-    let res = loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .margin(1)
-                .constraints([Percentage(80), Percentage(20)].as_ref())
-                .split(f.size());
+impl BlockState {
+    pub fn new(state: ListState, len: usize) -> Self {
+        Self { pos: state, len }
+    }
 
-            let attr_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Percentage(50), Percentage(50)].as_ref())
-                .split(chunks[1]);
+    pub fn next(&mut self) {
+        self.pos.select(Some(match self.pos.selected() {
+            Some(i) if i < self.len => i + 1,
+            _ => 0,
+        }))
+    }
 
-            draw_attributes(
-                f,
-                state,
-                &filter_views.contexts,
-                selected_style,
-                ActiveList::Contexts,
-                attr_chunks[0],
-            );
+    pub fn previous(&mut self) {
+        self.pos.select(Some(match self.pos.selected() {
+            Some(i) if i == 0 => self.len - 1,
+            Some(i) => i - 1,
+            None => 0,
+        }))
+    }
 
-            draw_attributes(
-                f,
-                state,
-                &filter_views.tags,
-                selected_style,
-                ActiveList::Tags,
-                attr_chunks[1],
-            );
+    pub fn reset(&mut self, len: usize) {
+        if self.len != len {
+            self.len = len;
+            if let Some(i) = self.pos.selected() {
+                if i >= len {
+                    self.pos = ListState::default();
+                }
+            }
+        }
+    }
+}
 
-            let mut list_items = Vec::new();
-            for state_item in filtered_items {
-                let parsed_item = ParsedLine::new(&state_item.val[..]);
-                let sub_text = parsed_item.start_date.unwrap_or("");
+pub struct State {
+    pub tasks: BlockState,
+    pub contexts: BlockState,
+    pub tags: BlockState,
+    pub active_list: ActiveList,
+}
+
+impl State {
+    pub fn new(tasklen: usize, ctxlen: usize, taglen: usize) -> Self {
+        Self {
+            tasks: BlockState::new(ListState::default(), tasklen),
+            contexts: BlockState::new(ListState::default(), ctxlen),
+            tags: BlockState::new(ListState::default(), taglen),
+            active_list: ActiveList::Tasks,
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.get_active_state().next();
+    }
+
+    pub fn previous(&mut self) {
+        self.get_active_state().previous();
+    }
+
+    pub fn move_right(&mut self) {
+        use ActiveList::{Contexts, Tags, Tasks};
+        self.active_list = match self.active_list {
+            Tasks => Contexts,
+            Contexts => Tags,
+            Tags => Tasks,
+        }
+    }
+
+    pub fn move_left(&mut self) {
+        use ActiveList::{Contexts, Tags, Tasks};
+        self.active_list = match self.active_list {
+            Tasks => Tags,
+            Contexts => Tasks,
+            Tags => Contexts,
+        }
+    }
+
+    pub fn get_style(&self, active_list: ActiveList) -> Style {
+        if self.active_list == active_list {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
+    }
+
+    fn get_active_state(&mut self) -> &mut BlockState {
+        self.get_state_mut(self.active_list)
+    }
+
+    pub fn get_state_mut(&mut self, list_t: ActiveList) -> &mut BlockState {
+        match list_t {
+            ActiveList::Tasks => &mut self.tasks,
+            ActiveList::Contexts => &mut self.contexts,
+            ActiveList::Tags => &mut self.tags,
+        }
+    }
+}
+
+pub struct MainView<'a> {
+    //pub state: RefCell<State>,
+    pub state: &'a mut State,
+    pub filtered_items: Vec<ParsedLine<'a>>,
+    pub filter_views: [Vec<String>; 2],
+}
+
+impl<'a> MainView<'a> {
+    pub fn new(
+        state: &'a mut State,
+        filtered_items: Vec<ParsedLine<'a>>,
+        filter_views: [Vec<String>; 2],
+    ) -> Self {
+        Self {
+            state,
+            filtered_items,
+            filter_views,
+        }
+    }
+
+    pub fn draw<B>(&mut self, f: &mut Frame<B>)
+    where
+        B: Backend,
+    {
+        let selected_style = Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD);
+
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints([Percentage(80), Percentage(20)].as_ref())
+            .split(f.size());
+
+        let attr_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Percentage(50), Percentage(50)].as_ref())
+            .split(chunks[1]);
+
+        self.draw_attributes(f, selected_style, ActiveList::Contexts, attr_chunks[0]);
+
+        self.draw_attributes(f, selected_style, ActiveList::Tags, attr_chunks[1]);
+
+        let list_items: Vec<ListItem> = self
+            .filtered_items
+            .iter()
+            .map(|state_item| {
+                let sub_text = state_item.start_date.unwrap_or("");
                 let lines = vec![
                     Spans::from(Span::styled(
-                        parsed_item.body,
+                        &state_item.body[..],
                         Style::default()
                             .fg(Color::White)
-                            .add_modifier(if parsed_item.complete {
+                            .add_modifier(if state_item.complete {
                                 Modifier::CROSSED_OUT
                             } else {
                                 Modifier::BOLD
@@ -216,98 +194,95 @@ fn run_with_view<B: Backend>(
                     Spans::from(Span::styled(sub_text, Style::default().fg(Color::DarkGray))),
                 ];
 
-                list_items.push(ListItem::new(lines));
-            }
+                ListItem::new(lines)
+            })
+            .collect();
 
-            let list = List::new(list_items)
-                .block(
-                    Block::default()
-                        .border_style(state.get_style(ActiveList::Tasks))
-                        .borders(Borders::ALL)
-                        .title("Tasks"),
-                )
-                .highlight_style(selected_style)
-                .highlight_symbol("*");
+        let list = List::new(list_items)
+            .block(
+                Block::default()
+                    .border_style(self.state.get_style(ActiveList::Tasks))
+                    .borders(Borders::ALL)
+                    .title("Tasks"),
+            )
+            .highlight_style(selected_style)
+            .highlight_symbol("*");
 
-            f.render_stateful_widget(list, chunks[0], &mut state.task_state.state);
-        })?;
+        f.render_stateful_widget(list, chunks[0], &mut self.state.tasks.pos);
+    }
 
-        match events.next()? {
+    fn draw_attributes<B: Backend>(
+        &mut self,
+        f: &mut Frame<'_, B>,
+        selected_style: Style,
+        list_t: ActiveList,
+        chunk: Rect,
+    ) {
+        let filter_opts = match list_t {
+            ActiveList::Tasks => panic!("not supposed to happen"),
+            ActiveList::Contexts => &self.filter_views[0],
+            ActiveList::Tags => &self.filter_views[1],
+        };
+
+        let list_items: Vec<ListItem> = filter_opts
+            .iter()
+            .map(|i| ListItem::new(Span::raw(i)))
+            .collect();
+
+        let list = List::new(list_items)
+            .block(
+                Block::default()
+                    .border_style(self.state.get_style(list_t))
+                    .borders(Borders::ALL)
+                    .title(list_t.to_string()),
+            )
+            .highlight_symbol("*")
+            .highlight_style(selected_style);
+
+        let block_state = self.state.get_state_mut(list_t);
+
+        f.render_stateful_widget(list, chunk, &mut block_state.pos);
+    }
+}
+
+impl<'a> EventHandler<Key> for MainView<'a> {
+    fn handle(&mut self, event: Event<Key>) -> Option<Action> {
+        match event {
             Event::Input(key) => match key {
-                Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => break Action::Exit,
-                Key::Char('j') => state.next(),
-                Key::Char('k') => state.previous(),
-                Key::Char('l') => state.move_right(),
-                Key::Char('h') => state.move_left(),
+                Key::Char('q') | Key::Ctrl('c') | Key::Ctrl('d') => return Some(Action::Exit),
+                Key::Char('j') => self.state.next(),
+                Key::Char('k') => self.state.previous(),
+                Key::Char('l') => self.state.move_right(),
+                Key::Char('h') => self.state.move_left(),
                 Key::Char(' ') => {
-                    let index = match state.active_list {
-                        ActiveList::Tasks => state
-                            .task_state
+                    let index = match self.state.active_list {
+                        ActiveList::Tasks => self
                             .state
+                            .tasks
+                            .pos
                             .selected()
-                            .map(|i| filtered_items[i].index),
-                        ActiveList::Contexts => state.context_state.state.selected(),
-                        ActiveList::Tags => state.tag_state.state.selected(),
+                            .map(|i| self.filtered_items[i].index),
+                        ActiveList::Contexts => self.state.contexts.pos.selected(),
+                        ActiveList::Tags => self.state.tags.pos.selected(),
                     };
 
                     if let Some(i) = index {
-                        break Action::Select(i);
+                        return Some(Action::Select(i));
                     }
                 }
-                Key::Char('w') => break Action::Write,
+                Key::Char('w') => return Some(Action::Write),
                 Key::Char('D') => {
-                    if ActiveList::Tasks == state.active_list {
-                        if let Some(i) = state.task_state.state.selected() {
-                            break Action::Delete(i);
+                    if ActiveList::Tasks == self.state.active_list {
+                        if let Some(i) = self.state.tasks.pos.selected() {
+                            return Some(Action::Delete(self.filtered_items[i].index));
                         }
                     }
                 }
-                Key::Char('r') => break Action::Reload,
-                //Key::Up => tlt.list.raw_items.push(String::from("new item")),
+                Key::Char('r') => return Some(Action::Reload),
                 _ => {}
             },
-            Event::Tick => {}
-        }
-    };
-
-    Ok(res)
-}
-
-fn draw_attributes<B: Backend>(
-    f: &mut Frame<'_, B>,
-    state: &mut State,
-    filter_opts: &[String],
-    selected_style: Style,
-    list_t: ActiveList,
-    chunk: Rect,
-) {
-    let list_items: Vec<ListItem> = filter_opts
-        .iter()
-        .map(|i| ListItem::new(Span::raw(i)))
-        .collect();
-
-    let list = List::new(list_items)
-        .block(
-            Block::default()
-                .border_style(state.get_style(list_t))
-                .borders(Borders::ALL)
-                .title(list_t.to_string()),
-        )
-        .highlight_symbol("*")
-        .highlight_style(selected_style);
-
-    f.render_stateful_widget(list, chunk, &mut state.get_state_mut(list_t).state);
-}
-
-fn make_view(input_list: &[String], filters: &BTreeSet<&str>) -> Vec<String> {
-    input_list
-        .iter()
-        .map(|v| {
-            format!(
-                "[{}] {}",
-                if filters.contains(&v[..]) { "x" } else { " " },
-                v,
-            )
-        })
-        .collect()
+            Event::_Tick => {}
+        };
+        None
+    }
 }

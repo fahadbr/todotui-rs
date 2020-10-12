@@ -1,17 +1,23 @@
+use crate::runner::Action;
+
+use std::io;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use std::io;
 
 use termion::event::Key;
 use termion::input::TermRead;
 
-pub enum Event<I> {
-    Input(I),
-    Tick,
+pub trait Handler<I> {
+    fn handle(&mut self, event: Event<I>) -> Option<Action>;
 }
 
-pub struct Events {
+pub enum Event<I> {
+    Input(I),
+    _Tick,
+}
+
+pub struct Generator {
     rx: mpsc::Receiver<Event<Key>>,
     //input_handle: thread::JoinHandle<()>,
 }
@@ -31,12 +37,12 @@ impl Default for Config {
     }
 }
 
-impl Events {
-    pub fn new() -> Events {
-        Events::with_config(Config::default())
+impl Generator {
+    pub fn new() -> Generator {
+        Generator::with_config(Config::default())
     }
 
-    pub fn with_config(config: Config) -> Events {
+    pub fn with_config(config: Config) -> Generator {
         let (sender, receiver) = mpsc::channel();
         //let input_handle = {
         //let sender = sender.clone();
@@ -63,3 +69,4 @@ impl Events {
         self.rx.recv()
     }
 }
+

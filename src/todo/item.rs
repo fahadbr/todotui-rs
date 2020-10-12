@@ -4,14 +4,15 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub struct ParsedLine<'a> {
     pub raw: &'a str,
-    pub body: &'a str,
+    pub index: usize,
+    pub body: String,
     pub complete: bool,
     pub start_date: Option<&'a str>,
     pub completion_date: Option<&'a str>,
     pub due_date: Option<&'a str>,
     pub threshold_date: Option<&'a str>,
     pub hidden: bool,
-    pub priority: char,
+    pub priority: Option<char>,
     pub contexts: Vec<&'a str>,
     pub tags: Vec<&'a str>,
     pub recurrance: Option<&'a str>,
@@ -39,20 +40,21 @@ impl Display for Parse {
 }
 
 impl<'a> ParsedLine<'a> {
-    pub fn new(raw: &'a str) -> Self {
+    pub fn new(raw: &'a str, index: usize) -> Self {
         let x: &[char] = &['\n', '\r'];
         let mut raw = raw.trim_end_matches(x);
 
         let mut item = Self {
             raw,
-            body: "",
+            index,
+            body: String::with_capacity(raw.len()),
             complete: false,
             start_date: None,
             completion_date: None,
             due_date: None,
             threshold_date: None,
             hidden: false,
-            priority: '\0',
+            priority: None,
             contexts: Vec::new(),
             tags: Vec::new(),
             recurrance: None,
@@ -71,9 +73,11 @@ impl<'a> ParsedLine<'a> {
         };
 
         let mut body_start_idx = 0;
+        let mut body_appended = false;
         for word in raw.split_whitespace() {
-            if item.body == "" && parse_state == Parse::Body {
-                item.body = &raw[body_start_idx..];
+            if !body_appended && parse_state == Parse::Body {
+                item.body.push_str(&raw[body_start_idx..]);
+                body_appended = true;
             } else {
                 body_start_idx += word.len() + 1;
             }
@@ -84,22 +88,22 @@ impl<'a> ParsedLine<'a> {
         item
     }
 
-    fn is_priority(word: &'a str) -> Result<char, ()> {
+    fn is_priority(word: &'a str) -> Option<char> {
         if word.len() != 3 {
-            return Err(());
+            return None;
         }
 
-        let mut priority: char = '\0';
+        let mut priority: Option<char> = None;
         for (i, c) in word.chars().enumerate() {
             match i {
-                0 if c != '(' => return Err(()),
-                1 => priority = c,
-                2 if c != ')' => return Err(()),
+                0 if c != '(' => return None,
+                1 => priority = Some(c),
+                2 if c != ')' => return None,
                 _ => continue,
             }
         }
 
-        Ok(priority)
+        priority
     }
 
     fn is_date(word: &'a str) -> bool {
@@ -160,8 +164,13 @@ impl<'a> ParsedLine<'a> {
                 }
                 Parse::Priority => {
                     *parse_state = Parse::StartDate;
-                    if let Ok(priority) = ParsedLine::is_priority(word) {
-                        self.priority = priority;
+                    if let Some(p) = ParsedLine::is_priority(word) {
+                        self.priority = Some(p);
+
+                        self.body.push('(');
+                        self.body.push(p);
+                        self.body.push(')');
+                        self.body.push(' ');
                         return;
                     }
                 }

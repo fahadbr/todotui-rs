@@ -17,8 +17,8 @@ impl Rep {
         let mut contexts = BTreeSet::new();
         let mut tags = BTreeSet::new();
 
-        for line in &items {
-            let i = ParsedLine::new(&line);
+        for (i, line) in items.iter().enumerate() {
+            let i = ParsedLine::new(&line, i);
             for c in i.contexts {
                 contexts.insert(c);
             }
