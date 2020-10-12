@@ -133,7 +133,6 @@ impl State {
 }
 
 pub struct MainView<'a> {
-    //pub state: RefCell<State>,
     pub state: &'a mut State,
     pub filtered_items: Vec<ParsedLine<'a>>,
     pub filter_views: Filters<Vec<String>>,

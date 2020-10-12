@@ -65,8 +65,6 @@ fn run_with_file<B: Backend>(
         list_rep.filters.tags.len(),
     );
 
-    //let mut ctx_filters: BTreeSet<&str> = BTreeSet::new();
-    //let mut tag_filters: BTreeSet<&str> = BTreeSet::new();
     let mut active_filters: Filters<BTreeSet<&str>> =
         Filters::new(BTreeSet::new(), BTreeSet::new());
 

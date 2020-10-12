@@ -5,7 +5,7 @@ use crate::app::ActiveList;
 /// Filters is meant to be a struct which holds filters
 pub struct Filters<I>
 where
-    I: IntoIterator + Empty,
+    I: IntoIterator,
 {
     pub contexts: I,
     pub tags: I,
@@ -13,7 +13,7 @@ where
 
 impl<I> Filters<I>
 where
-    I: IntoIterator + Empty,
+    I: IntoIterator,
 {
     pub fn new(contexts: I, tags: I) -> Self {
         Self { contexts, tags }
@@ -35,6 +35,7 @@ where
         }
     }
 }
+
 impl<'a> Filters<BTreeSet<&'a str>> {
     pub fn include(&self, item: &str) -> bool {
         self.include_for_filter(item, ActiveList::Contexts)
@@ -55,6 +56,8 @@ impl<'a> Filters<BTreeSet<&'a str>> {
     }
 }
 
+/*
+
 pub trait Empty {
     fn is_empty(&self) -> bool;
 }
@@ -70,3 +73,5 @@ impl<T> Empty for BTreeSet<T> {
         self.is_empty()
     }
 }
+
+*/
